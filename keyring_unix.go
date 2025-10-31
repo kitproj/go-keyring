@@ -9,51 +9,17 @@ import (
 	ss "github.com/zalando/go-keyring/secret_service"
 )
 
-type compositeProvider struct {
-	primary  Keyring
-	fallback Keyring
-}
-
-func (c compositeProvider) Set(service, user, pass string) error {
-	err := c.primary.Set(service, user, pass)
-	if err != nil && c.fallback != nil {
-		return c.fallback.Set(service, user, pass)
-	}
-	return err
-}
-
-func (c compositeProvider) Get(service, user string) (string, error) {
-	result, err := c.primary.Get(service, user)
-	if err != nil && c.fallback != nil {
-		return c.fallback.Get(service, user)
-	}
-	return result, err
-}
-
-func (c compositeProvider) Delete(service, user string) error {
-	err := c.primary.Delete(service, user)
-	if err != nil && c.fallback != nil {
-		return c.fallback.Delete(service, user)
-	}
-	return err
-}
-
-func (c compositeProvider) DeleteAll(service string) error {
-	err := c.primary.DeleteAll(service)
-	if err != nil && c.fallback != nil {
-		return c.fallback.DeleteAll(service)
-	}
-	return err
-}
-
 type secretServiceProvider struct{}
 
+// Set stores user and pass in the keyring under the defined service
+// name.
 func (s secretServiceProvider) Set(service, user, pass string) error {
 	svc, err := ss.NewSecretService()
 	if err != nil {
 		return err
 	}
 
+	// open a session
 	session, err := svc.OpenSession()
 	if err != nil {
 		return err
@@ -84,6 +50,7 @@ func (s secretServiceProvider) Set(service, user, pass string) error {
 	return nil
 }
 
+// findItem looksup an item by service and user.
 func (s secretServiceProvider) findItem(svc *ss.SecretService, service, user string) (dbus.ObjectPath, error) {
 	collection := svc.GetLoginCollection()
 
@@ -109,6 +76,7 @@ func (s secretServiceProvider) findItem(svc *ss.SecretService, service, user str
 	return results[0], nil
 }
 
+// findServiceItems looksup all items by service.
 func (s secretServiceProvider) findServiceItems(svc *ss.SecretService, service string) ([]dbus.ObjectPath, error) {
 	collection := svc.GetLoginCollection()
 
@@ -133,6 +101,7 @@ func (s secretServiceProvider) findServiceItems(svc *ss.SecretService, service s
 	return results, nil
 }
 
+// Get gets a secret from the keyring given a service name and a user.
 func (s secretServiceProvider) Get(service, user string) (string, error) {
 	svc, err := ss.NewSecretService()
 	if err != nil {
@@ -144,12 +113,14 @@ func (s secretServiceProvider) Get(service, user string) (string, error) {
 		return "", err
 	}
 
+	// open a session
 	session, err := svc.OpenSession()
 	if err != nil {
 		return "", err
 	}
 	defer svc.Close(session)
 
+	// unlock if invdividual item is locked
 	err = svc.Unlock(item)
 	if err != nil {
 		return "", err
@@ -163,6 +134,7 @@ func (s secretServiceProvider) Get(service, user string) (string, error) {
 	return string(secret.Value), nil
 }
 
+// Delete deletes a secret, identified by service & user, from the keyring.
 func (s secretServiceProvider) Delete(service, user string) error {
 	svc, err := ss.NewSecretService()
 	if err != nil {
@@ -177,7 +149,9 @@ func (s secretServiceProvider) Delete(service, user string) error {
 	return svc.Delete(item)
 }
 
+// DeleteAll deletes all secrets for a given service
 func (s secretServiceProvider) DeleteAll(service string) error {
+	// if service is empty, do nothing otherwise it might accidentally delete all secrets
 	if service == "" {
 		return ErrNotFound
 	}
@@ -186,7 +160,7 @@ func (s secretServiceProvider) DeleteAll(service string) error {
 	if err != nil {
 		return err
 	}
-
+	// find all items for the service
 	items, err := s.findServiceItems(svc, service)
 	if err != nil {
 		if err == ErrNotFound {
@@ -203,16 +177,23 @@ func (s secretServiceProvider) DeleteAll(service string) error {
 	return nil
 }
 
+// getFallbackProvider returns the appropriate fallback provider for the platform
+// Defined in platform-specific files (e.g., keyring_keyctl.go for Linux)
 var getFallbackProvider = func() Keyring {
 	return nil
 }
 
 func init() {
+	// Try to initialize Secret Service
 	svc, err := ss.NewSecretService()
 	if err == nil {
+		// Secret Service is available
 		svc.Close(nil)
 		provider = secretServiceProvider{}
 	} else {
+		// Secret Service not available, use compositeProvider with fallback
+		// Note: We still try Secret Service as primary for forward compatibility
+		// but will fallback to keyctl if it's not available
 		fallback := getFallbackProvider()
 		if fallback != nil {
 			provider = compositeProvider{
@@ -220,6 +201,7 @@ func init() {
 				fallback: fallback,
 			}
 		} else {
+			// No fallback available, keep using Secret Service (will error on operations)
 			provider = secretServiceProvider{}
 		}
 	}
