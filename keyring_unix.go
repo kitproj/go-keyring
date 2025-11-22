@@ -177,6 +177,32 @@ func (s secretServiceProvider) DeleteAll(service string) error {
 	return nil
 }
 
+// getFallbackProvider returns the appropriate fallback provider for the platform
+// Defined in platform-specific files (e.g., keyring_keyctl.go for Linux)
+var getFallbackProvider = func() Keyring {
+	return nil
+}
+
 func init() {
-	provider = secretServiceProvider{}
+	// Try to initialize Secret Service
+	svc, err := ss.NewSecretService()
+	if err == nil {
+		// Secret Service is available
+		svc.Close(nil)
+		provider = secretServiceProvider{}
+	} else {
+		// Secret Service not available, use compositeProvider with fallback
+		// Note: We still try Secret Service as primary for forward compatibility
+		// but will fallback to keyctl if it's not available
+		fallback := getFallbackProvider()
+		if fallback != nil {
+			provider = compositeProvider{
+				primary:  secretServiceProvider{},
+				fallback: fallback,
+			}
+		} else {
+			// No fallback available, keep using Secret Service (will error on operations)
+			provider = secretServiceProvider{}
+		}
+	}
 }
