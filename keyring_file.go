@@ -3,7 +3,6 @@
 package keyring
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -84,7 +83,7 @@ func (f *fileProvider) DeleteAll(service string) error {
 	}
 
 	serviceDir := filepath.Join(configDirPath, "go-keyring", service)
-	
+
 	entries, err := os.ReadDir(serviceDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -115,8 +114,5 @@ func getTokenFilePath(service, user string) (string, error) {
 		return "", fmt.Errorf("failed to get config directory: %w", err)
 	}
 
-	filename := fmt.Sprintf("%s.json", user)
-	tokenPath := filepath.Join(configDirPath, "go-keyring", service, filename)
-	return tokenPath, nil
+	return filepath.Join(configDirPath, "go-keyring", service, user), nil
 }
-
