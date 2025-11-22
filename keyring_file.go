@@ -23,7 +23,7 @@ func init() {
 }
 
 func (f *fileProvider) Set(service, user, password string) error {
-	tokenPath, err := getTokenFilePath(service)
+	tokenPath, err := getTokenFilePath(service, user)
 	if err != nil {
 		return err
 	}
@@ -33,20 +33,7 @@ func (f *fileProvider) Set(service, user, password string) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	tokens := make(map[string]string)
-
-	if data, err := os.ReadFile(tokenPath); err == nil {
-		_ = json.Unmarshal(data, &tokens)
-	}
-
-	tokens[user] = password
-
-	data, err := json.MarshalIndent(tokens, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal tokens: %w", err)
-	}
-
-	if err := os.WriteFile(tokenPath, data, 0600); err != nil {
+	if err := os.WriteFile(tokenPath, []byte(password), 0600); err != nil {
 		return fmt.Errorf("failed to write token file: %w", err)
 	}
 
@@ -54,7 +41,7 @@ func (f *fileProvider) Set(service, user, password string) error {
 }
 
 func (f *fileProvider) Get(service, user string) (string, error) {
-	tokenPath, err := getTokenFilePath(service)
+	tokenPath, err := getTokenFilePath(service, user)
 	if err != nil {
 		return "", err
 	}
@@ -67,58 +54,20 @@ func (f *fileProvider) Get(service, user string) (string, error) {
 		return "", fmt.Errorf("failed to read token file: %w", err)
 	}
 
-	tokens := make(map[string]string)
-	if err := json.Unmarshal(data, &tokens); err != nil {
-		return "", fmt.Errorf("failed to parse token file: %w", err)
-	}
-
-	token, ok := tokens[user]
-	if !ok {
-		return "", ErrNotFound
-	}
-
-	return token, nil
+	return string(data), nil
 }
 
 func (f *fileProvider) Delete(service, user string) error {
-	tokenPath, err := getTokenFilePath(service)
+	tokenPath, err := getTokenFilePath(service, user)
 	if err != nil {
 		return err
 	}
 
-	data, err := os.ReadFile(tokenPath)
-	if err != nil {
+	if err := os.Remove(tokenPath); err != nil {
 		if os.IsNotExist(err) {
 			return ErrNotFound
 		}
-		return fmt.Errorf("failed to read token file: %w", err)
-	}
-
-	tokens := make(map[string]string)
-	if err := json.Unmarshal(data, &tokens); err != nil {
-		return fmt.Errorf("failed to parse token file: %w", err)
-	}
-
-	if _, ok := tokens[user]; !ok {
-		return ErrNotFound
-	}
-
-	delete(tokens, user)
-
-	if len(tokens) == 0 {
-		if err := os.Remove(tokenPath); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("failed to remove token file: %w", err)
-		}
-		return nil
-	}
-
-	data, err = json.MarshalIndent(tokens, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal tokens: %w", err)
-	}
-
-	if err := os.WriteFile(tokenPath, data, 0600); err != nil {
-		return fmt.Errorf("failed to write token file: %w", err)
+		return fmt.Errorf("failed to remove token file: %w", err)
 	}
 
 	return nil
@@ -129,29 +78,45 @@ func (f *fileProvider) DeleteAll(service string) error {
 		return ErrNotFound
 	}
 
-	tokenPath, err := getTokenFilePath(service)
+	configDirPath, err := os.UserConfigDir()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get config directory: %w", err)
 	}
 
-	if err := os.Remove(tokenPath); err != nil {
+	serviceDir := filepath.Join(configDirPath, "go-keyring", service)
+	
+	entries, err := os.ReadDir(serviceDir)
+	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return fmt.Errorf("failed to remove token file: %w", err)
+		return fmt.Errorf("failed to read service directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			filePath := filepath.Join(serviceDir, entry.Name())
+			if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("failed to remove token file: %w", err)
+			}
+		}
+	}
+
+	if err := os.Remove(serviceDir); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove service directory: %w", err)
 	}
 
 	return nil
 }
 
-func getTokenFilePath(service string) (string, error) {
+func getTokenFilePath(service, user string) (string, error) {
 	configDirPath, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to get config directory: %w", err)
 	}
 
-	filename := fmt.Sprintf("%s.json", service)
-	tokenPath := filepath.Join(configDirPath, "go-keyring", filename)
+	filename := fmt.Sprintf("%s.json", user)
+	tokenPath := filepath.Join(configDirPath, "go-keyring", service, filename)
 	return tokenPath, nil
 }
 
