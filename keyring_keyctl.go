@@ -14,7 +14,15 @@ type keyctlProvider struct{}
 
 func init() {
 	fileFallback := &fileProvider{}
+	originalFallback := getFallbackProvider
 	getFallbackProvider = func() Keyring {
+		existing := originalFallback()
+		if existing != nil {
+			return compositeProvider{
+				primary:  keyctlProvider{},
+				fallback: existing,
+			}
+		}
 		return compositeProvider{
 			primary:  keyctlProvider{},
 			fallback: fileFallback,
