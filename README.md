@@ -143,6 +143,128 @@ func main() {
 
 ```
 
+## Direct CLI Usage
+
+While this library provides a convenient Go API, you can also interact with the system keyring directly using OS-specific command-line tools. This can be useful for debugging, scripting, or understanding what the library does under the hood. You can use the CLI to set-up the secrets from a script and then access them from Go, or vice-versa.
+
+### macOS
+
+macOS uses the `security` command to interact with the Keychain.
+
+**Set a password:**
+```bash
+security add-generic-password -U -s "service" -a "user" -w "password"
+```
+
+**Get a password:**
+```bash
+security find-generic-password -s "service" -wa "user"
+```
+
+**Delete a password:**
+```bash
+security delete-generic-password -s "service" -a "user"
+```
+
+Where:
+- `-s` specifies the service name
+- `-a` specifies the account/username
+- `-w` specifies the password to store
+- `-U` updates the password if it already exists
+- The `w` option in `-wa` outputs only the password value
+
+### Linux and *BSD
+
+Linux and *BSD systems use the Secret Service API via D-Bus. The easiest way to interact with it from the command line is using `secret-tool`, which is part of libsecret.
+
+**Install secret-tool (if not already installed):**
+```bash
+# Debian/Ubuntu
+sudo apt-get install libsecret-tools
+
+# Fedora/RHEL
+sudo dnf install libsecret
+
+# Arch Linux
+sudo pacman -S libsecret
+```
+
+**Set a password:**
+```bash
+secret-tool store --label="Password for 'user' on 'service'" service "service" username "user"
+# You'll be prompted to enter the password
+```
+
+Or provide the password directly:
+```bash
+echo -n "password" | secret-tool store --label="Password for 'user' on 'service'" service "service" username "user"
+```
+
+**Get a password:**
+```bash
+secret-tool lookup service "service" username "user"
+```
+
+**Delete a password:**
+```bash
+secret-tool clear service "service" username "user"
+```
+
+Note: The `service` and `username` are attributes used to identify the secret. The label is a human-readable description.
+
+### Windows
+
+Windows uses the Credential Manager, which can be accessed via `cmdkey` or PowerShell.
+
+**Using cmdkey:**
+
+**Set a password:**
+```cmd
+cmdkey /generic:"service:user" /user:"user" /pass:"password"
+```
+
+**Get a password:**
+
+`cmdkey` doesn't support retrieving passwords directly. Use PowerShell instead:
+```powershell
+$cred = Get-StoredCredential -Target "service:user"
+$cred.GetNetworkCredential().Password
+```
+
+Or using the Windows API via PowerShell:
+```powershell
+[System.Net.NetworkCredential]::new("", (Get-StoredCredential -Target "service:user").Password).Password
+```
+
+**Delete a password:**
+```cmd
+cmdkey /delete:"service:user"
+```
+
+**Using PowerShell with CredentialManager module:**
+
+First, install the CredentialManager module:
+```powershell
+Install-Module -Name CredentialManager -Force
+```
+
+**Set a password:**
+```powershell
+New-StoredCredential -Target "service:user" -UserName "user" -Password "password" -Type Generic -Persist LocalMachine
+```
+
+**Get a password:**
+```powershell
+(Get-StoredCredential -Target "service:user").GetNetworkCredential().Password
+```
+
+**Delete a password:**
+```powershell
+Remove-StoredCredential -Target "service:user"
+```
+
+Note: On Windows, the library combines the service and username as `service:username` for the credential target name.
+
 ## Tests
 
 ### Running tests
