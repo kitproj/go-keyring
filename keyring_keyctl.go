@@ -13,8 +13,12 @@ import (
 type keyctlProvider struct{}
 
 func init() {
+	fileFallback := &fileProvider{}
 	getFallbackProvider = func() Keyring {
-		return keyctlProvider{}
+		return compositeProvider{
+			primary:  keyctlProvider{},
+			fallback: fileFallback,
+		}
 	}
 }
 
