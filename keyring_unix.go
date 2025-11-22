@@ -185,10 +185,8 @@ var getFallbackProvider = func() Keyring {
 
 func init() {
 	// Try to initialize Secret Service
-	svc, err := ss.NewSecretService()
+	_, err := ss.NewSecretService()
 	if err == nil {
-		// Secret Service is available
-		svc.Close(nil)
 		provider = secretServiceProvider{}
 	} else {
 		// Secret Service not available, use compositeProvider with fallback
