@@ -65,7 +65,7 @@ func (f *fileProvider) Delete(service, user string) error {
 
 	if err := os.Remove(tokenPath); err != nil {
 		if os.IsNotExist(err) {
-			return ErrNotFound
+			return nil
 		}
 		return fmt.Errorf("failed to remove token file: %w", err)
 	}
